@@ -1,11 +1,11 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pickle
 import os
-from datetime import datetime
 import calendar
 
 # Set page configuration
@@ -27,7 +27,9 @@ def load_model():
             'na/nairobi_uv_model.pkl',
             './na/nairobi_uv_model.pkl',
             'model/nairobi_uv_model.pkl',
-            './model/nairobi_uv_model.pkl'
+            './model/nairobi_uv_model.pkl',
+            'app/nairobi_uv_model.pkl',
+            './app/nairobi_uv_model.pkl'
         ]
         
         model_path = None
@@ -36,12 +38,27 @@ def load_model():
         for path in possible_paths:
             if os.path.exists(path):
                 model_path = path
-                scaler_path = path.replace('nairobi_uv_model.pkl', 'scaler.pkl')
-                if os.path.exists(scaler_path):
+                # Try to find scaler in same location
+                scaler_candidates = [
+                    path.replace('nairobi_uv_model.pkl', 'scaler.pkl'),
+                    path.replace('nairobi_uv_model.pkl', 'scaler.pkl').replace('./', ''),
+                    'scaler.pkl',
+                    './scaler.pkl',
+                    'na/scaler.pkl',
+                    './na/scaler.pkl'
+                ]
+                for scaler_candidate in scaler_candidates:
+                    if os.path.exists(scaler_candidate):
+                        scaler_path = scaler_candidate
+                        break
+                if scaler_path:
                     break
         
-        if model_path is None or scaler_path is None:
-            st.error("Model files not found. Please ensure both 'nairobi_uv_model.pkl' and 'scaler.pkl' are accessible.")
+        if model_path is None:
+            st.error("Model file not found. Please ensure 'nairobi_uv_model.pkl' is accessible.")
+            return None, None
+        if scaler_path is None:
+            st.error("Scaler file not found. Please ensure 'scaler.pkl' is accessible.")
             return None, None
         
         with open(model_path, 'rb') as f:
@@ -49,7 +66,7 @@ def load_model():
         with open(scaler_path, 'rb') as f:
             scaler = pickle.load(f)
             
-        st.success(f"✅ Model loaded successfully from: {model_path}")
+        st.success(f"✅ Model loaded successfully!")
         return model, scaler
         
     except Exception as e:
@@ -71,34 +88,82 @@ def main():
     if model is None:
         st.info("💡 **Troubleshooting tips:**")
         st.markdown("""
-        - Ensure both `nairobi_uv_model.pkl` and `scaler.pkl` are in your project folder
-        - If they're in a subfolder, update the path in the code
-        - Check that the files have read permissions
+        - Ensure both `nairobi_uv_model.pkl` and `scaler.pkl` are in your project
+        - Common locations: same folder, 'na/' folder, or 'model/' folder
+        - Check the file names are exactly correct
         """)
+        
+        # Show current directory contents
+        st.subheader("📁 Current Directory Contents")
+        try:
+            current_files = []
+            for root, dirs, files in os.walk('.'):
+                for file in files:
+                    if file.endswith('.pkl'):
+                        current_files.append(os.path.join(root, file))
+            
+            if current_files:
+                st.write("Found .pkl files:")
+                for file in current_files:
+                    st.write(f"- {file}")
+            else:
+                st.write("No .pkl files found in current directory")
+        except Exception as e:
+            st.write(f"Could not list directory contents: {e}")
+        
         return
     
     # Sidebar for user input
     st.sidebar.header("📊 Input Weather Parameters")
     st.sidebar.markdown("Enter the weather conditions to predict UV index risk:")
     
-    # User input fields
+    # User input fields with session state for persistence
+    if 'temp' not in st.session_state:
+        st.session_state.temp = 75.0
+    if 'humidity' not in st.session_state:
+        st.session_state.humidity = 70.0
+    if 'precip' not in st.session_state:
+        st.session_state.precip = 0.1
+    if 'solar_radiation' not in st.session_state:
+        st.session_state.solar_radiation = 200.0
+    if 'cloud_cover' not in st.session_state:
+        st.session_state.cloud_cover = 50.0
+    if 'sun_duration' not in st.session_state:
+        st.session_state.sun_duration = 720.0
+    
     col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        temp = st.slider("Temperature (°F)", min_value=50.0, max_value=95.0, value=75.0, step=0.5)
-        humidity = st.slider("Humidity (%)", min_value=30.0, max_value=95.0, value=70.0, step=1.0)
-        precip = st.slider("Precipitation (inches)", min_value=0.0, max_value=2.0, value=0.1, step=0.1)
+        temp = st.slider("Temperature (°F)", min_value=50.0, max_value=95.0, 
+                        value=st.session_state.temp, step=0.5, key="temp_slider")
+        humidity = st.slider("Humidity (%)", min_value=30.0, max_value=95.0, 
+                           value=st.session_state.humidity, step=1.0, key="humidity_slider")
+        precip = st.slider("Precipitation (inches)", min_value=0.0, max_value=2.0, 
+                          value=st.session_state.precip, step=0.1, key="precip_slider")
     
     with col2:
-        solar_radiation = st.slider("Solar Radiation (W/m²)", min_value=100.0, max_value=350.0, value=200.0, step=5.0)
-        cloud_cover = st.slider("Cloud Cover (%)", min_value=0.0, max_value=100.0, value=50.0, step=5.0)
-        sun_duration = st.slider("Sun Duration (minutes)", min_value=600.0, max_value=780.0, value=720.0, step=5.0)
+        solar_radiation = st.slider("Solar Radiation (W/m²)", min_value=100.0, max_value=350.0, 
+                                  value=st.session_state.solar_radiation, step=5.0, key="solar_slider")
+        cloud_cover = st.slider("Cloud Cover (%)", min_value=0.0, max_value=100.0, 
+                              value=st.session_state.cloud_cover, step=5.0, key="cloud_slider")
+        sun_duration = st.slider("Sun Duration (minutes)", min_value=600.0, max_value=780.0, 
+                               value=st.session_state.sun_duration, step=5.0, key="sun_slider")
     
     # Create input array
     input_data = np.array([[temp, humidity, precip, solar_radiation, cloud_cover, sun_duration]])
     
     # Prediction button
     if st.sidebar.button("🔍 Predict UV Risk", use_container_width=True):
+        # Update session state
+        st.session_state.update({
+            'temp': temp,
+            'humidity': humidity,
+            'precip': precip,
+            'solar_radiation': solar_radiation,
+            'cloud_cover': cloud_cover,
+            'sun_duration': sun_duration
+        })
+        
         # Scale the input
         input_scaled = scaler.transform(input_data)
         
@@ -182,7 +247,27 @@ def main():
                        f'{width:.3f}', ha='left', va='center')
             
             st.pyplot(fig)
+
+    # Quick predictions section
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🎯 Quick Scenarios")
     
+    scenarios = {
+        "☀️ Sunny Day": [80.0, 55.0, 0.0, 300.0, 15.0, 750.0],
+        "☁️ Cloudy Day": [72.0, 75.0, 0.1, 160.0, 80.0, 700.0],
+        "🌧️ Rainy Day": [68.0, 85.0, 0.8, 120.0, 95.0, 650.0]
+    }
+    
+    for scenario_name, scenario_values in scenarios.items():
+        if st.sidebar.button(scenario_name, use_container_width=True):
+            st.session_state.temp = scenario_values[0]
+            st.session_state.humidity = scenario_values[1]
+            st.session_state.precip = scenario_values[2]
+            st.session_state.solar_radiation = scenario_values[3]
+            st.session_state.cloud_cover = scenario_values[4]
+            st.session_state.sun_duration = scenario_values[5]
+            st.rerun()
+
     # Main content area
     st.markdown("---")
     
@@ -219,115 +304,15 @@ def main():
         - **Rainy seasons:** Temporary relief
         - **Consistent risk:** Due to equatorial location
         """)
-    
-    # Quick predictions section
+
+    # Footer
     st.markdown("---")
-    st.subheader("🎯 Try Common Weather Scenarios")
-    
-    scenario_col1, scenario_col2, scenario_col3 = st.columns(3)
-    
-    # Pre-defined scenarios
-    scenarios = {
-        "Sunny Day": [80.0, 55.0, 0.0, 300.0, 15.0, 750.0],
-        "Cloudy Day": [72.0, 75.0, 0.1, 160.0, 80.0, 700.0],
-        "Rainy Day": [68.0, 85.0, 0.8, 120.0, 95.0, 650.0]
-    }
-    
-    with scenario_col1:
-        if st.button("☀️ Typical Sunny Day", use_container_width=True):
-            st.session_state.temp = 80.0
-            st.session_state.humidity = 55.0
-            st.session_state.precip = 0.0
-            st.session_state.solar_radiation = 300.0
-            st.session_state.cloud_cover = 15.0
-            st.session_state.sun_duration = 750.0
-            st.rerun()
-    
-    with scenario_col2:
-        if st.button("☁️ Overcast Day", use_container_width=True):
-            st.session_state.temp = 72.0
-            st.session_state.humidity = 75.0
-            st.session_state.precip = 0.1
-            st.session_state.solar_radiation = 160.0
-            st.session_state.cloud_cover = 80.0
-            st.session_state.sun_duration = 700.0
-            st.rerun()
-    
-    with scenario_col3:
-        if st.button("🌧️ Rainy Season Day", use_container_width=True):
-            st.session_state.temp = 68.0
-            st.session_state.humidity = 85.0
-            st.session_state.precip = 0.8
-            st.session_state.solar_radiation = 120.0
-            st.session_state.cloud_cover = 95.0
-            st.session_state.sun_duration = 650.0
-            st.rerun()
-
-    # Data insights section
-    st.markdown("---")
-    st.subheader("📈 Nairobi UV Insights")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Monthly UV Risk Pattern**")
-        # Sample visualization
-        months = [calendar.month_name[i] for i in range(1, 13)]
-        high_uv_prob = [0.7, 0.8, 0.9, 0.85, 0.8, 0.7, 0.6, 0.7, 0.8, 0.85, 0.8, 0.75]
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bars = ax.bar(months, high_uv_prob, color=['red' if x > 0.7 else 'orange' for x in high_uv_prob])
-        plt.xticks(rotation=45)
-        plt.title('Probability of High UV Index by Month in Nairobi')
-        plt.ylim(0, 1)
-        plt.ylabel('Probability of High UV')
-        
-        # Add value labels on bars
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                   f'{height:.0%}', ha='center', va='bottom')
-        
-        st.pyplot(fig)
-    
-    with col2:
-        st.markdown("**Protection Guidelines**")
-        st.markdown("""
-        **When UV > 8 (High Risk):**
-        - Sunscreen: SPF 30+, reapply every 2 hours
-        - Clothing: Long sleeves, UV-protective fabric
-        - Timing: Avoid sun 10AM-4PM
-        - Accessories: Hat, sunglasses required
-        
-        **General Tips for Nairobi:**
-        - Check UV forecast daily
-        - Even cloudy days can have high UV
-        - Altitude increases UV exposure
-        - Hydration helps with heat management
-        """)
-
-# Initialize session state for sliders
-if 'temp' not in st.session_state:
-    st.session_state.temp = 75.0
-if 'humidity' not in st.session_state:
-    st.session_state.humidity = 70.0
-if 'precip' not in st.session_state:
-    st.session_state.precip = 0.1
-if 'solar_radiation' not in st.session_state:
-    st.session_state.solar_radiation = 200.0
-if 'cloud_cover' not in st.session_state:
-    st.session_state.cloud_cover = 50.0
-if 'sun_duration' not in st.session_state:
-    st.session_state.sun_duration = 720.0
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center'>
-    <p>Built with ❤️ using Streamlit | Model: Random Forest Classifier | Data: Nairobi Weather Forecast</p>
-    <p><small>Always consult local weather authorities for official UV index information. This tool provides predictions based on machine learning models.</small></p>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='text-align: center'>
+        <p>Built with ❤️ using Streamlit | Model: Random Forest Classifier | Data: Nairobi Weather Forecast</p>
+        <p><small>Always consult local weather authorities for official UV index information. This tool provides predictions based on machine learning models.</small></p>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
